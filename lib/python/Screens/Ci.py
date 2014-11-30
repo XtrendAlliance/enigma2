@@ -3,8 +3,8 @@ from Components.ActionMap import ActionMap
 from Components.ActionMap import NumberActionMap
 from Components.Label import Label
 
-from Components.config import config, ConfigNumber, ConfigYesNo, ConfigSubsection, ConfigSelection, ConfigSubList, getConfigListEntry, KEY_LEFT, KEY_RIGHT, KEY_0, ConfigNothing, ConfigPIN
-from Components.ConfigList import ConfigList, ConfigListScreen
+from Components.config import config, ConfigSubsection, ConfigSelection, ConfigSubList, getConfigListEntry, KEY_LEFT, KEY_RIGHT, KEY_0, ConfigNothing, ConfigPIN
+from Components.ConfigList import ConfigList
 
 from Components.SystemInfo import SystemInfo
 
@@ -22,7 +22,7 @@ def InitCiConfig():
 	config.ci = ConfigSubList()
 	for slot in range(MAX_NUM_CI):
 		config.ci.append(ConfigSubsection())
-		config.ci[slot].canDescrambleMultipleServices = ConfigSelection(choices = [("auto", _("Auto")), ("no", _("No")), ("yes", _("Yes"))], default = "no")
+		config.ci[slot].canDescrambleMultipleServices = ConfigSelection(choices = [("auto", _("Auto")), ("no", _("No")), ("yes", _("Yes"))], default = "auto")
 		if SystemInfo["CommonInterfaceSupportsHighBitrates"]:
 			config.ci[slot].canHandleHighBitrates = ConfigSelection(choices = [("no", _("No")), ("yes", _("Yes"))], default = "yes")
 			config.ci[slot].canHandleHighBitrates.slotid = slot
@@ -84,16 +84,14 @@ class MMIDialog(Screen):
 			pinlength = entry[1]
 			if entry[3] == 1:
 				# masked pins:
-				x = ConfigPIN(int(config.cipin.pin1.value), len = pinlength, censor = "*")
+				x = ConfigPIN(0, len = pinlength, censor = "*")
 			else:
 				# unmasked pins:
-				x = ConfigPIN(int(config.cipin.pin1.value), len = pinlength)
+				x = ConfigPIN(0, len = pinlength)
 			x.addEndNotifier(self.pinEntered)
 			self["subtitle"].setText(entry[2])
 			list.append( getConfigListEntry("", x) )
 			self["bottom"].setText(_("please press OK when ready"))
-			if config.cipin.pin1autook.value:
-				self.okbuttonClick()
 
 	def pinEntered(self, value):
 		self.okbuttonClick()
@@ -118,18 +116,9 @@ class MMIDialog(Screen):
 			self.showWait()
 		elif self.tag == "ENQ":
 			cur = self["entries"].getCurrent()
-			try:
-				answer = str(cur[1].value)
-			except:
-				answer = str(config.cipin.pin1.value)
-				
+			answer = str(cur[1].value)
 			length = len(answer)
-			
-			try:
-				pinlen = cur[1].getLength()
-			except:
-				pinlen = len(str(config.cipin.pin1.value))
-			while length < pinlen:
+			while length < cur[1].getLength():
 				answer = '0'+answer
 				length+=1
 			self.handler.answerEnq(self.slotid, answer)
@@ -189,7 +178,8 @@ class MMIDialog(Screen):
 		self["title"].setText("")
 		self["subtitle"].setText("")
 		self["bottom"].setText("")
-		list = [(self.wait_text, ConfigNothing())]
+		list = [ ]
+		list.append( (self.wait_text, ConfigNothing()) )
 		self.updateList(list)
 
 	def showScreen(self):
@@ -269,10 +259,7 @@ class CiMessageHandler:
 				self.dlgs[slot].ciStateChanged()
 			elif eDVBCI_UI.getInstance().availableMMI(slot) == 1:
 				if self.session and not config.usage.hide_ci_messages.value:
-					try:
-						self.dlgs[slot] = self.session.openWithCallback(self.dlgClosed, MMIDialog, slot, 3)
-					except:
-						pass
+					self.dlgs[slot] = self.session.openWithCallback(self.dlgClosed, MMIDialog, slot, 3)
 
 	def dlgClosed(self, slot):
 		if slot in self.dlgs:
@@ -291,7 +278,6 @@ CiHandler = CiMessageHandler()
 class CiSelection(Screen):
 	def __init__(self, session):
 		Screen.__init__(self, session)
-		self.setTitle(_("Common Interface"))
 		self["actions"] = ActionMap(["OkCancelActions", "CiSelectionActions"],
 			{
 				"left": self.keyLeft,
@@ -315,7 +301,7 @@ class CiSelection(Screen):
 		menuList.l.setList(self.list)
 		self["entries"] = menuList
 		self["entries"].onSelectionChanged.append(self.selectionChanged)
-		self["text"] = Label(_("Slot %d")% 1)
+		self["text"] = Label(_("Slot %d")%(1))
 
 	def selectionChanged(self):
 		cur_idx = self["entries"].getCurrentIndex()
@@ -406,40 +392,4 @@ class CiSelection(Screen):
 			state = eDVBCI_UI.getInstance().getState(slot)
 			if state != -1:
 				CiHandler.unregisterCIMessageHandler(slot)
-		self.close()
-
-config.cipin = ConfigSubsection()
-config.cipin.pin1 = ConfigPIN(1234, len = 4)
-config.cipin.pin1autook = ConfigYesNo(default=False)
-
-class CiDefaultPinSetup(ConfigListScreen, Screen):
-	def __init__(self, session, args = 0):
-		Screen.__init__(self, session)
-		self.skinName = ["Setup"]
-			
-		list = []
-		list.append(getConfigListEntry(_('Default PIN for CI'), config.cipin.pin1))
-		list.append(getConfigListEntry(_('Enable auto PIN'), config.cipin.pin1autook))
-
-		self["key_red"] = Label(_("Exit"))
-		self["key_green"] = Label(_("Save"))
-			
-		ConfigListScreen.__init__(self, list)
-		self['actions'] = ActionMap(['OkCancelActions', 'ColorActions'], 
-		{
-			'red' : self.dontSaveAndExit,  
-			'green': self.saveAndExit, 
-			'cancel': self.dontSaveAndExit
-		}, -1)
-
-	def saveAndExit(self):
-		for x in self['config'].list:
-			x[1].save()
-
-		config.cipin.save()
-		self.close()
-
-	def dontSaveAndExit(self):
-		for x in self['config'].list:
-		    x[1].cancel()
 		self.close()
