@@ -23,12 +23,6 @@
 		</menu>
 
 		<item level="1" text="Plugins" entryID="plugin_selection"><screen module="PluginBrowser" screen="PluginBrowser" /></item>
-<code>
-from Screens.InfoBar import InfoBar
-if InfoBar and InfoBar.instance:
-        InfoBar.showExtensionSelection(InfoBar.instance)
-</code>
-                </item>
 		<menu level="0" text="Setup" flushConfigOnClose="1" entryID="setup_selection" >
 			<id val="setup" />
 			<menu weight="7" level="0" text="Service searching" entryID="service_searching_selection">
@@ -62,9 +56,10 @@ if InfoBar and InfoBar.instance:
 				<item level="0" text="Language" entryID="language_setup"><screen module="LanguageSelection" /></item>
 				<item level="0" entryID="timezone_setup"><setup id="timezone"/></item>
 			</menu>
-			<menu weight="10" text="SoftCam / CI" entryID="cam_setup">
+			<menu weight="10" text="Common Interface (CI)" entryID="cam_setup" requires="CommonInterface">
 				<id val="cam" />
-				<item weight="10" level="1" text="Common Interface" entryID="ci_setup" requires="CommonInterface"><screen module="Ci" screen="CiSelection" /></item>
+				<item weight="10" level="1" text="Common interface" entryID="ci_setup"><screen module="Ci" screen="CiSelection" /></item>
+				<item weight="10" level="1" text="Common interface PIN Setup" entryID="ci_setup"><screen module="Ci" screen="CiDefaultPinSetup" /></item>
 			</menu>
 			<item weight="15" level="0" text="Parental control" entryID="parental_setup"><screen module="ParentalControlSetup" screen="ParentalControlSetup" /></item>
 			<item weight="15" level="0" text="Factory reset" entryID="factory_reset">
