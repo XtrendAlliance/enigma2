@@ -1,9 +1,10 @@
-import os
+import os, re, unicodedata
 from Renderer import Renderer
 from enigma import ePixmap
 from Tools.Alternatives import GetWithAlternative
 from Tools.Directories import pathExists, SCOPE_SKIN_IMAGE, SCOPE_CURRENT_SKIN, resolveFilename
 from Components.Harddisk import harddiskmanager
+from ServiceReference import ServiceReference
 
 searchPaths = []
 lastPiconPath = None

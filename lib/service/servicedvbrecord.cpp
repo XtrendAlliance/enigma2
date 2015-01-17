@@ -90,6 +90,8 @@ void eDVBServiceRecord::serviceEvent(int event)
 	}
 }
 
+#define HILO(x) (x##_hi << 8 | x##_lo)
+
 RESULT eDVBServiceRecord::prepare(const char *filename, time_t begTime, time_t endTime, int eit_event_id, const char *name, const char *descr, const char *tags, bool descramble, bool recordecm)
 {
 	m_filename = filename;
@@ -305,7 +307,7 @@ int eDVBServiceRecord::doRecord()
 	{
 		eDebug("Recording to %s...", m_filename.c_str());
 		::remove(m_filename.c_str());
-		int fd = ::open(m_filename.c_str(), O_WRONLY|O_CREAT|O_LARGEFILE, 0666);
+		int fd = ::open(m_filename.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_CLOEXEC, 0666);
 		if (fd == -1)
 		{
 			eDebug("eDVBServiceRecord - can't open recording file!");

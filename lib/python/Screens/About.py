@@ -12,8 +12,14 @@ from Components.config import config, ConfigSubsection, ConfigSelection, getConf
 from Components.Label import Label
 import re
 
+from Components.Label import Label
+from Components.ProgressBar import ProgressBar
+
 from Tools.StbHardware import getFPVersion
-from enigma import eTimer
+from enigma import eTimer, eLabel
+
+from Components.HTMLComponent import HTMLComponent
+from Components.GUIComponent import GUIComponent
 
 config.CommitInfoSetup = ConfigSubsection()
 config.CommitInfoSetup.commiturl = ConfigSelection(default='Enigma2', choices=[('Enigma2', _('Source-Enigma2')), ('XTA', _('Skin-XTA')), ('TechniHD', _('Skin-TechniHD'))])
@@ -24,6 +30,7 @@ class About(Screen):
 
 
 		AboutText = _("Hardware: ") + about.getHardwareTypeString() + "\n"
+		AboutText += _("CPU: ") + about.getCPUInfoString() + "\n"
 		AboutText += _("Image: ") + about.getImageTypeString() + "\n"
 		AboutText += _("Kernel version: ") + about.getKernelVersionString() + "\n"
 
@@ -31,9 +38,15 @@ class About(Screen):
 		self["EnigmaVersion"] = StaticText(EnigmaVersion)
 		AboutText += EnigmaVersion + "\n"
 
+		GStreamerVersion = "GStreamer: " + about.getGStreamerVersionString()
+		self["GStreamerVersion"] = StaticText(GStreamerVersion)
+		AboutText += GStreamerVersion + "\n"
+
 		ImageVersion = _("Last upgrade: ") + about.getImageVersionString()
 		self["ImageVersion"] = StaticText(ImageVersion)
 		AboutText += ImageVersion + "\n"
+
+		AboutText += _("DVB drivers: ") + about.getDriverInstalledDate() + "\n"
 
 		fp_version = getFPVersion()
 		if fp_version is None:
@@ -66,7 +79,7 @@ class About(Screen):
 					hddinfo += "\n"
 				hdd = hddlist[count][1]
 				if int(hdd.free()) > 1024:
-					hddinfo += "%s\n(%s, %d GB %s)" % (hdd.model(), hdd.capacity(), hdd.free()/1024, _("free"))
+					hddinfo += "%s\n(%s, %.1f GB %s)" % (hdd.model(), hdd.capacity(), hdd.free()/1024., _("free"))
 				else:
 					hddinfo += "%s\n(%s, %d MB %s)" % (hdd.model(), hdd.capacity(), hdd.free(), _("free"))
 		else:
@@ -76,6 +89,7 @@ class About(Screen):
 		self["AboutScrollLabel"] = ScrollLabel(AboutText)
 		self["key_green"] = Button(_("Translations"))
 		self["key_red"] = Button(_("Latest Commits"))
+		self["key_blue"] = Button(_("Memory Info"))
 
 		self["actions"] = ActionMap(["ColorActions", "SetupActions", "DirectionActions"],
 			{
@@ -83,6 +97,7 @@ class About(Screen):
 				"ok": self.close,
 				"red": self.showCommits,
 				"green": self.showTranslationInfo,
+				"blue": self.showMemoryInfo,
 				"up": self["AboutScrollLabel"].pageUp,
 				"down": self["AboutScrollLabel"].pageDown
 			}, -2)
@@ -92,6 +107,9 @@ class About(Screen):
 
 	def showCommits(self):
 		self.session.open(CommitInfo)
+
+	def showMemoryInfo(self):
+		self.session.open(MemoryInfo)
 
 class TranslationInfo(Screen):
 	def __init__(self, session):
@@ -114,6 +132,7 @@ class TranslationInfo(Screen):
 			infomap[type] = value
 		print infomap
 
+		self["key_red"] = Button(_("Cancel"))
 		self["TranslationInfo"] = StaticText(info)
 
 		translator_name = infomap.get("Language-Team", "none")
@@ -237,4 +256,90 @@ class CommitInfoSetup(Screen, ConfigListScreen):
                         x[1].cancel()
 
                 self.close()
-         
+
+class MemoryInfo(Screen):
+	def __init__(self, session):
+		Screen.__init__(self, session)
+
+		self["actions"] = ActionMap(["SetupActions", "ColorActions"],
+			{
+				"cancel": self.close,
+				"ok": self.getMemoryInfo,
+				"green": self.getMemoryInfo,
+				"blue": self.clearMemory,
+			})
+
+		self["key_red"] = Label(_("Cancel"))
+		self["key_green"] = Label(_("Refresh"))
+		self["key_blue"] = Label(_("Clear"))
+
+		self['lmemtext'] = Label()
+		self['lmemvalue'] = Label()
+		self['rmemtext'] = Label()
+		self['rmemvalue'] = Label()
+
+		self['pfree'] = Label()
+		self['pused'] = Label()
+		self["slide"] = ProgressBar()
+		self["slide"].setValue(100)
+
+		self["params"] = MemoryInfoSkinParams()
+
+		self['info'] = Label(_("This info is for developers only.\nFor a normal users it is not important.\nDon't panic, please, when here will be displayed any suspicious informations!"))
+
+		self.setTitle(_("Memory Info"))
+		self.onLayoutFinish.append(self.getMemoryInfo)
+
+	def getMemoryInfo(self):
+		try:
+			ltext = rtext = ""
+			lvalue = rvalue = ""
+			mem = 1
+			free = 0
+			i = 0
+			for line in open('/proc/meminfo','r'):
+				( name, size, units ) = line.strip().split()
+				if "MemTotal" in name:
+					mem = int(size)
+				if "MemFree" in name:
+					free = int(size)
+				if i < self["params"].rows_in_column:
+					ltext += "".join((name,"\n"))
+					lvalue += "".join((size," ",units,"\n"))
+				else:
+					rtext += "".join((name,"\n"))
+					rvalue += "".join((size," ",units,"\n"))
+				i += 1
+			self['lmemtext'].setText(ltext)
+			self['lmemvalue'].setText(lvalue)
+			self['rmemtext'].setText(rtext)
+			self['rmemvalue'].setText(rvalue)
+
+			self["slide"].setValue(int(100.0*(mem-free)/mem+0.25))
+			self['pfree'].setText("%.1f %s" % (100.*free/mem,'%'))
+			self['pused'].setText("%.1f %s" % (100.*(mem-free)/mem,'%'))
+
+		except Exception, e:
+			print "[About] getMemoryInfo FAIL:", e
+
+	def clearMemory(self):
+		from os import system
+		system("sync")
+		system("echo 3 > /proc/sys/vm/drop_caches")
+		self.getMemoryInfo()
+
+class MemoryInfoSkinParams(HTMLComponent, GUIComponent):
+	def __init__(self):
+		GUIComponent.__init__(self)
+		self.rows_in_column = 25
+
+	def applySkin(self, desktop, screen):
+		if self.skinAttributes is not None:
+			attribs = [ ]
+			for (attrib, value) in self.skinAttributes:
+				if attrib == "rowsincolumn":
+					self.rows_in_column = int(value)
+			self.skinAttributes = attribs
+		return GUIComponent.applySkin(self, desktop, screen)
+
+	GUI_WIDGET = eLabel

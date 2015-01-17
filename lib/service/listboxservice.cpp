@@ -453,7 +453,7 @@ int eListboxServiceContent::cursorResolve(int cursorPosition)
 		if (count == cursorPosition)
 			break;
 		count++;
-		if (m_hide_number_marker && (i->flags & eServiceReference::isNumberedMarker) || (i->flags & eServiceReference::isInvisible))
+		if ((m_hide_number_marker && (i->flags & eServiceReference::isNumberedMarker)) || (i->flags & eServiceReference::isInvisible))
 			continue;
 		strippedCursor++;
 	}
@@ -496,7 +496,7 @@ int eListboxServiceContent::size()
 	int size = 0;
 	for (list::iterator i(m_list.begin()); i != m_list.end(); ++i)
 	{
-		if (m_hide_number_marker && (i->flags & eServiceReference::isNumberedMarker) || (i->flags & eServiceReference::isInvisible))
+		if ((m_hide_number_marker && (i->flags & eServiceReference::isNumberedMarker)) || (i->flags & eServiceReference::isInvisible))
 			continue;
 		size++;
 	}
@@ -548,7 +548,7 @@ bool eListboxServiceContent::checkServiceIsRecorded(eServiceReference ref)
 			res->getChannelList(db);
 			eBouquet *bouquet=0;
 			db->getBouquet(ref, bouquet);
-			for (std::list<eServiceReference>::iterator i(bouquet->m_services.begin()); i != bouquet->m_services.end(); ++it)
+			for (std::list<eServiceReference>::iterator i(bouquet->m_services.begin()); i != bouquet->m_services.end(); ++i)
 				if (*i == it->second)
 					return true;
 		}
@@ -647,14 +647,30 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 		bool isRecorded = m_record_indicator_mode && isPlayable && checkServiceIsRecorded(ref);
 		ePtr<eServiceEvent> evt;
 		bool serviceAvail = true;
+		bool serviceFallback = false;
+		int isplayable_value;
 
-		if (!marked && isPlayable && service_info && m_is_playable_ignore.valid() && !service_info->isPlayable(*m_cursor, m_is_playable_ignore))
+		if (!marked && isPlayable && service_info && m_is_playable_ignore.valid())
 		{
-			if (m_color_set[serviceNotAvail])
-				painter.setForegroundColor(m_color[serviceNotAvail]);
+			isplayable_value = service_info->isPlayable(*m_cursor, m_is_playable_ignore);
+
+			if (isplayable_value == 0) // service unavailable
+			{
+				if (m_color_set[serviceNotAvail])
+					painter.setForegroundColor(m_color[serviceNotAvail]);
+				else
+					painter.setForegroundColor(gRGB(0xbbbbbb));
+				serviceAvail = false;
+			}
 			else
-				painter.setForegroundColor(gRGB(0xbbbbbb));
-			serviceAvail = false;
+			{
+				if (isplayable_value == 2) // fallback receiver service
+				{
+					if (m_color_set[serviceItemFallback])
+						painter.setForegroundColor(m_color[serviceItemFallback]);
+					serviceFallback = true;
+				}
+			}
 		}
 		if (m_record_indicator_mode == 3 && isRecorded)
 		{
@@ -676,7 +692,7 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 			{
 				int flags=gPainter::RT_VALIGN_CENTER;
 				int yoffs = 0;
-				eRect &area = m_element_position[e];
+				eRect area = m_element_position[e];
 				std::string text = "<n/a>";
 				switch (e)
 				{
@@ -692,12 +708,24 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 					snprintf(buffer, sizeof(buffer), "%d", m_cursor->getChannelNum() );
 					text = buffer;
 					flags|=gPainter::RT_HALIGN_RIGHT;
+					if (isPlayable && serviceFallback && selected && m_color_set[serviceSelectedFallback])
+						painter.setForegroundColor(m_color[serviceSelectedFallback]);
 					break;
 				}
 				case celServiceName:
 				{
 					if (service_info)
 						service_info->getName(*m_cursor, text);
+					if (!isPlayable)
+					{
+						area.setWidth(area.width() + m_element_position[celServiceEventProgressbar].width() + 10);
+						if (m_element_position[celServiceEventProgressbar].left() == 0)
+							area.setLeft(0);
+						if (m_element_position[celServiceNumber].width() && m_element_position[celServiceEventProgressbar].left() == m_element_position[celServiceNumber].width() + 10)
+							area.setLeft(m_element_position[celServiceNumber].width() + 10);
+					}
+					if (!(m_record_indicator_mode == 3 && isRecorded) && isPlayable && serviceFallback && selected && m_color_set[serviceSelectedFallback])
+						painter.setForegroundColor(m_color[serviceSelectedFallback]);
 					break;
 				}
 				case celServiceInfo:
@@ -716,6 +744,12 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 								painter.setForegroundColor(m_color[eventForegroundSelected]);
 							else
 								painter.setForegroundColor(gRGB(0xe7b53f));
+
+							if (serviceFallback && !selected && m_color_set[eventForegroundFallback]) // fallback receiver
+								painter.setForegroundColor(m_color[eventForegroundFallback]);
+							else if (serviceFallback && selected && m_color_set[eventForegroundSelectedFallback])
+								painter.setForegroundColor(m_color[eventForegroundSelectedFallback]);
+
 						}
 						break;
 					}
@@ -737,10 +771,30 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 
 				eRect tmp = area;
 				int xoffs = 0;
+				ePtr<gPixmap> piconPixmap;
+
 				if (e == celServiceName)
 				{
+					//picon stuff
+					if (isPlayable && PyCallable_Check(m_GetPiconNameFunc))
+					{
+						ePyObject pArgs = PyTuple_New(1);
+						PyTuple_SET_ITEM(pArgs, 0, PyString_FromString(ref.toString().c_str()));
+						ePyObject pRet = PyObject_CallObject(m_GetPiconNameFunc, pArgs);
+						Py_DECREF(pArgs);
+						if (pRet)
+						{
+							if (PyString_Check(pRet))
+							{
+								std::string piconFilename = PyString_AS_STRING(pRet);
+								if (!piconFilename.empty())
+									loadPNG(piconPixmap, piconFilename.c_str());
+							}
+							Py_DECREF(pRet);
+						}
+					}
 					xoffs = xoffset;
-					tmp.setWidth(((!isPlayable || !m_column_width) ? tmp.width() : m_column_width < 0 ? area.width() / 2 : m_column_width) - xoffs);
+					tmp.setWidth(((!isPlayable || m_column_width == -1 || (!piconPixmap && !m_column_width)) ? tmp.width() : m_column_width) - xoffs);
 				}
 
 				eTextPara *para = new eTextPara(tmp);
@@ -751,7 +805,7 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 				{
 					eRect bbox = para->getBoundBox();
 
-					int servicenameWidth = ((!isPlayable || !m_column_width) ? bbox.width() : m_column_width < 0 ? area.width() / 2 : m_column_width);
+					int servicenameWidth = ((!isPlayable || m_column_width == -1 || (!piconPixmap && !m_column_width)) ? bbox.width() : m_column_width);
 					m_element_position[celServiceInfo].setLeft(area.left() + servicenameWidth + 8 + xoffs);
 					m_element_position[celServiceInfo].setTop(area.top());
 					m_element_position[celServiceInfo].setWidth(area.width() - (servicenameWidth + 8 + xoffs));
@@ -760,7 +814,7 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 					if (isPlayable)
 					{
 						//picon stuff
-						if (PyCallable_Check(m_GetPiconNameFunc))
+						if (PyCallable_Check(m_GetPiconNameFunc) and (m_column_width || piconPixmap))
 						{
 							eRect area = m_element_position[celServiceInfo];
 							/* PIcons are usually about 100:60. Make it a
@@ -772,32 +826,15 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 							m_element_position[celServiceInfo].setWidth(area.width() - iconWidth);
 							area = m_element_position[celServiceName];
 							xoffs += iconWidth;
-							ePyObject pArgs = PyTuple_New(1);
-							PyTuple_SET_ITEM(pArgs, 0, PyString_FromString(ref.toString().c_str()));
-							ePyObject pRet = PyObject_CallObject(m_GetPiconNameFunc, pArgs);
-							Py_DECREF(pArgs);
-							if (pRet)
+							if (piconPixmap)
 							{
-								if (PyString_Check(pRet))
-								{
-									std::string piconFilename = PyString_AS_STRING(pRet);
-									if (!piconFilename.empty())
-									{
-										ePtr<gPixmap> piconPixmap;
-										loadPNG(piconPixmap, piconFilename.c_str());
-										if (piconPixmap)
-										{
-											area.moveBy(offset);
-											painter.clip(area);
-											painter.blitScale(piconPixmap,
-												eRect(area.left(), area.top(), iconWidth, area.height()),
-												area,
-												gPainter::BT_ALPHABLEND | gPainter::BT_KEEP_ASPECT_RATIO);
-											painter.clippop();
-										}
-									}
-								}
-								Py_DECREF(pRet);
+								area.moveBy(offset);
+								painter.clip(area);
+								painter.blitScale(piconPixmap,
+									eRect(area.left(), area.top(), iconWidth, area.height()),
+									area,
+									gPainter::BT_ALPHABLEND | gPainter::BT_KEEP_ASPECT_RATIO);
+								painter.clippop();
 							}
 						}
 
@@ -918,6 +955,8 @@ void eListboxServiceContent::paint(gPainter &painter, eWindowStyle &style, const
 					eRect area = m_element_position[e == celFolderPixmap ? celServiceName: celServiceNumber];
 					int correction = (area.height() - pixmap_size.height()) / 2;
 					if (e == celFolderPixmap)
+						if (m_element_position[celServiceEventProgressbar].left() == 0)
+							area.setLeft(0);
 						xoffset = pixmap_size.width() + 8;
 					area.moveBy(offset);
 					painter.clip(area);
